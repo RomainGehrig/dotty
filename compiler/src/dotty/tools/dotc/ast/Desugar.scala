@@ -285,6 +285,13 @@ object desugar {
       case _ => false
     }
 
+    val isTypeClass = {
+      val typeclsAnnot = "typeclass".toTypeName
+      mods.is(Trait) && mods.annotations.exists{
+        case Apply(Select(New(Ident(c)), _), _) => c eq typeclsAnnot
+        case _ => false }
+    }
+
     val isCaseClass = mods.is(Case) && !mods.is(Module)
     val isValueClass = parents.nonEmpty && isAnyVal(parents.head)
       // This is not watertight, but `extends AnyVal` will be replaced by `inline` later.
@@ -432,8 +439,19 @@ object desugar {
         companionDefs(anyRef, defaultGetters)
       else if (isValueClass)
         companionDefs(anyRef, Nil)
-      else Nil
-
+      else if (isTypeClass) {
+        // Methods for the companion object:
+        // 1. apply (to get the implicit instance)
+        val applyMeth = {
+          val applyParam = makeSyntheticParameter(tpt = classTypeRef)
+          val applyParamWithMods = applyParam.withMods(applyParam.mods | Implicit)
+          val applyRHS = Ident(applyParam.name)
+          DefDef(nme.apply, derivedTparams, (applyParamWithMods :: Nil) :: Nil, TypeTree(), applyRHS)
+            .withMods(synthetic)
+        }
+        companionDefs(anyRef, applyMeth :: Nil)
+      } else
+        Nil
 
     // For an implicit class C[Ts](p11: T11, ..., p1N: T1N) ... (pM1: TM1, .., pMN: TMN), the method
     //     synthetic implicit C[Ts](p11: T11, ..., p1N: T1N) ... (pM1: TM1, ..., pMN: TMN): C[Ts] =
