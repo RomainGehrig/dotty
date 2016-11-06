@@ -441,7 +441,7 @@ object desugar {
         companionDefs(anyRef, Nil)
       else if (isTypeClass) {
         // Methods for the companion object:
-        // 1. apply (to get the implicit instance)
+        // 1. apply (to get the implicit instance) when using notation C[B].func(p1,p2,..,pn)
         val applyMeth = {
           val applyParam = makeSyntheticParameter(tpt = classTypeRef)
           val applyParamWithMods = applyParam.withMods(applyParam.mods | Implicit)
@@ -449,7 +449,76 @@ object desugar {
           DefDef(nme.apply, derivedTparams, (applyParamWithMods :: Nil) :: Nil, TypeTree(), applyRHS)
             .withMods(synthetic)
         }
-        companionDefs(anyRef, applyMeth :: Nil)
+
+        val infixAnnot = "infix".toTypeName
+
+        // _1 are the normal members, _2 are infix methods, _3 are the others
+        def collectMethods(cls: TypeDef): (List[Tree], List[DefDef], List[DefDef]) = {
+          cls.rhs match {
+            case rhs@Template(constr, parents, self, _) =>
+              val body: List[Tree] = rhs.forceIfLazy // TODO: Is it alright to force eval lazyBody ?
+              body.foldRight[(List[Tree], List[DefDef], List[DefDef])]((Nil, Nil, Nil)){
+                case (t: Tree, lst@(others: List[Tree], lls: List[DefDef], rls: List[DefDef])) =>
+                  t match {
+                    case d@DefDef(_,_,applys,_,_) =>
+                      // TODO: also check that the first argument of the function is of the correct type
+                      val isInfix = d.mods.annotations.exists {
+                        case Apply(Select(New(Ident(c)), _), _) => c eq infixAnnot
+                        case _ => false }
+                      if (isInfix) (others, d :: lls, rls)
+                      else (others, lls, d :: rls)
+                    case o => (o :: others, lls, rls)
+                  }
+              }
+            case _ => (Nil, Nil, Nil)
+          }
+        }
+
+        // TODO add trait members to the syntax obj ?
+        // For instance if we want do define an alias type T = A in the trait, we want have it in scope
+        // in the syntax obj if it is used in method signatures
+
+        def transformInfixMethod(meth: DefDef): DefDef = {
+          val DefDef(name, tparams, vparamss, tpt, _) = meth
+          val rhs = meth.forceIfLazy
+          if (rhs.isEmpty) {
+            vparamss match {
+              // TODO which is the correct type to check ? Should the typeclasses be constrained to exactly one T param ?
+              case (( :: params) :: vparams) => if
+            }
+            DefDef(name, tparams, )
+          } else {
+            println("An implementation already exists")
+          }
+          //println(rhs.isEmpty)
+          // Apply(Ident(f), List(Apply(Ident(extract), List(Ident(fa)))))
+          meth
+        }
+
+        val (members, _, normalMethods) = collectMethods(cdef)
+        val infixMethods = Nil
+
+        // implicit class Ops used to store binary (and n-ary) functions used in an infix fashion
+        val opsClass = {
+          // TODO Tparams : trait type(s) + ?
+          val opsClsMods = Modifiers(Implicit) // TODO: Synthetic ?
+          val opsConstr = makeConstructor(derivedTparams, ListOfNil)
+          val cls = classDef(TypeDef("Ops".toTypeName,
+                                    Template(opsConstr, Nil, EmptyValDef, infixMethods))
+                              .withMods(opsClsMods))
+
+          cls.withPos(cdef.pos)
+        }
+
+        // SyntaxObject
+        val syntaxObj = {
+          val syntaxObjMods = synthetic
+          moduleDef(ModuleDef("syntax".toTermName,
+                              Template(emptyConstructor, Nil, EmptyValDef, opsClass :: /*members ::: */normalMethods ::: Nil))
+                      .withMods(syntaxObjMods))
+        }
+
+        companionDefs(anyRef, syntaxObj :: applyMeth :: Nil)
       } else
         Nil
 
@@ -459,10 +528,12 @@ object desugar {
     val implicitWrappers =
       if (!mods.is(Implicit))
         Nil
+    /* Temporarly commented for testing purposes
       else if (ctx.owner is Package) {
         ctx.error(TopLevelImplicitClass(cdef), cdef.pos)
         Nil
       }
+     */
       else if (isCaseClass) {
         ctx.error(ImplicitCaseClass(cdef), cdef.pos)
         Nil
@@ -616,13 +687,14 @@ object desugar {
     Bind(name, Ident(nme.WILDCARD)).withPos(tree.pos)
   }
 
-  def defTree(tree: Tree)(implicit ctx: Context): Tree = tree match {
-    case tree: ValDef => valDef(tree)
-    case tree: TypeDef => if (tree.isClassDef) classDef(tree) else typeDef(tree)
-    case tree: DefDef => defDef(tree)
-    case tree: ModuleDef => moduleDef(tree)
-    case tree: PatDef => patDef(tree)
-  }
+  def defTree(tree: Tree)(implicit ctx: Context): Tree =
+    tree match {
+      case tree: ValDef => valDef(tree)
+      case tree: TypeDef => if (tree.isClassDef) classDef(tree) else typeDef(tree)
+      case tree: DefDef => defDef(tree)
+      case tree: ModuleDef => moduleDef(tree)
+      case tree: PatDef => patDef(tree)
+    }
 
   /**     { stats; <empty > }
    *  ==>
