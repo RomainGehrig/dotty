@@ -465,14 +465,20 @@ object desugar {
           }
         }
 
+        val rawTparams = constr1.tparams
+
         // In this Ops class, the classArgParam is A
         // implicit class Ops[F[_], A](fa: F[A])(implicit F: Monad[F])
         // TODO: use ctx.freshName to create the A
-        val classArgType = TypeDef("A".toTypeName, EmptyTree)
-        val classArgParam = makeSyntheticParameter(1, tpt = classArgType)
+        val classArgType = TypeDef("A".toTypeName, TypeBoundsTree(EmptyTree,EmptyTree)).withFlags(PrivateLocalParam)
+        val classArgParam = {
+          // TODO: strip correctly the constTparams (some types already exist) or constrTparams is empty
+          val p = makeSyntheticParameter(1, tpt=AppliedTypeTree(Ident(constrTparams(0).name), Ident(classArgType.name)))
+          p.withMods(p.mods | ParamAccessor)
+        }
         val implTraitInstance = {
-          val param = makeSyntheticParameter(2, tpt = classTypeRef)
-          param.withMods(param.mods | Implicit)
+          val param = makeSyntheticParameter(2, tpt=classTypeRef)
+          param.withMods(param.mods | Implicit | ParamAccessor)
         }
 
         // TODO Goal: have the correct tparams for the Ops class & the other functions
@@ -486,14 +492,14 @@ object desugar {
             vparamss match {
               // TODO which is the correct type to check ? Should the typeclasses
               // be constrained to exactly one T param ? For now we assume correct type
-              case (x@(ValDef(_, AppliedTypeTree(id@Ident(_), typeParams), valRhs) :: params) :: vparams) =>
+              case (x@(ValDef(_, _, valRhs) :: params) :: vparams) =>
                 // Apply(Select(TypeApply(Ident(F),List(Ident(A))),flatMap),List)
                 // x => ValDef(fa,AppliedTypeTree(Ident(F),List(Ident(A))),EmptyTree)
                 // val funCall = Apply(Select(TypeApply())) // TODO: function to create this tree ?
                 val allParams = ((classArgParam :: params) :: vparams).nestedMap(i => Ident(i.name))
                 val select = Select(Ident(implTraitInstance.name), name)
                 val methApply = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
-                DefDef(name, tparams, params :: vparams, tpt, methApply)
+                DefDef(name, tparams.tail, params :: vparams, tpt, methApply)
               case _ =>
                 ctx.error("Method was declared infix but no matching argument was found", cdef.pos)
                 meth
@@ -515,7 +521,7 @@ object desugar {
             val select = Select(Ident(implTraitInstance.name), name)
             val newRhs = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
             // TODO: use context bounds or put the implicit instance in the correct position (implicit vparams)
-            DefDef(name, derivedTparams ::: tparams, vparamss ::: ((implTraitInstance :: Nil) :: Nil), tpt, newRhs)
+            DefDef(name, constrTparams ::: tparams, vparamss ::: ((implTraitInstance :: Nil) :: Nil), tpt, newRhs)
           } else {
             println("An implementation already exists: " + rhs)
             meth
@@ -525,9 +531,10 @@ object desugar {
         // arst
 
         val (members, infx, nm) = collectMethods(cdef)
-        val infx1 = infx.map(transformInfixMethod)
-        val nm1 = nm.map(transformNormalMethods)
-        val infixMethods = Nil// infx1
+        val infx1 = infx.map(transformInfixMethod).map(defDef(_))
+        val nm1 = nm.map(transformNormalMethods).map(defDef(_))
+        // debug method = DefDef("test".toTermName, Nil, ListOfNil, TypeTree(), Select(Ident(implTraitInstance.name), name))
+        val infixMethods =  infx1
         val normalMethods = nm1
 
         // implicit class Ops used to store binary (and n-ary) functions used in an infix fashion
@@ -535,13 +542,16 @@ object desugar {
           // TODO Tparams : trait type(s) + ?
           val opsClsMods = Modifiers(Implicit) // TODO: Synthetic ?
           // TODO find why there is an error with no parameters
-          val opsConstr = makeConstructor(derivedTparams, (Nil) :: (implTraitInstance :: Nil) :: Nil)
+          val opsConstr = makeConstructor(classArgType :: rawTparams.map(tparam => cpy.TypeDef(tparam)()),
+                                          (classArgParam :: Nil) :: (implTraitInstance :: Nil) :: Nil)
           val cls = classDef(TypeDef("Ops".toTypeName,
                                      Template(opsConstr, Nil, EmptyValDef, infixMethods))
                                .withMods(opsClsMods))
 
           cls.withPos(cdef.pos)
         }
+
+        println(opsClass.show)
 
         // Syntax object
         // TODO add trait members to the syntax obj ?
