@@ -458,7 +458,7 @@ object desugar {
             case rhs@Template(constr, parents, self, _) =>
               val body: List[Tree] = rhs.forceIfLazy // TODO: Is it alright to force eval lazyBody ?
               body.foldRight[(List[Tree], List[DefDef], List[DefDef])]((Nil, Nil, Nil)){
-                case (t: Tree, lst@(others: List[Tree], lls: List[DefDef], rls: List[DefDef])) =>
+                case (t: Tree, lst@(others, lls, rls)) =>
                   t match {
                     case d@DefDef(_,_,applys,_,_) =>
                       // TODO: also check that the first argument of the function is of the correct type
@@ -474,48 +474,93 @@ object desugar {
           }
         }
 
-        // TODO add trait members to the syntax obj ?
-        // For instance if we want do define an alias type T = A in the trait, we want have it in scope
-        // in the syntax obj if it is used in method signatures
+        // In this Ops class, the classArgParam is A
+        // implicit class Ops[F[_], A](fa: F[A])(implicit F: Monad[F])
+        // TODO: use ctx.freshName to create the A
+        val classArgType = TypeDef("A".toTypeName, EmptyTree)
+        val classArgParam = makeSyntheticParameter(1, tpt = classArgType)
+        val implTraitInstance = {
+          val param = makeSyntheticParameter(2, tpt = classTypeRef)
+          param.withMods(param.mods | Implicit)
+        }
 
+        // TODO Goal: have the correct tparams for the Ops class & the other functions
+        // - Higher order vs fully defined
+        // - Strip redundant tparams from infix methods
+        // - ?
         def transformInfixMethod(meth: DefDef): DefDef = {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
           val rhs = meth.forceIfLazy
           if (rhs.isEmpty) {
             vparamss match {
-              // TODO which is the correct type to check ? Should the typeclasses be constrained to exactly one T param ?
-              case (( :: params) :: vparams) => if
+              // TODO which is the correct type to check ? Should the typeclasses
+              // be constrained to exactly one T param ? For now we assume correct type
+              case (x@(ValDef(_, AppliedTypeTree(id@Ident(_), typeParams), valRhs) :: params) :: vparams) =>
+                // Apply(Select(TypeApply(Ident(F),List(Ident(A))),flatMap),List)
+                // x => ValDef(fa,AppliedTypeTree(Ident(F),List(Ident(A))),EmptyTree)
+                // val funCall = Apply(Select(TypeApply())) // TODO: function to create this tree ?
+                val allParams = ((classArgParam :: params) :: vparams).nestedMap(i => Ident(i.name))
+                val select = Select(Ident(implTraitInstance.name), name)
+                val methApply = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
+                DefDef(name, tparams, params :: vparams, tpt, methApply)
+              case _ =>
+                ctx.error("Method was declared infix but no matching argument was found", cdef.pos)
+                meth
             }
-            DefDef(name, tparams, )
+          // DefDef(name, tparams, )
           } else {
-            println("An implementation already exists")
+            println("An implementation already exists: " + rhs)
+            meth
           }
           //println(rhs.isEmpty)
           // Apply(Ident(f), List(Apply(Ident(extract), List(Ident(fa)))))
-          meth
         }
 
-        val (members, _, normalMethods) = collectMethods(cdef)
-        val infixMethods = Nil
+        def transformNormalMethods(meth: DefDef): DefDef = {
+          val DefDef(name, tparams, vparamss, tpt, _) = meth
+          val rhs = meth.forceIfLazy
+          if (rhs.isEmpty) {
+            val allParams = vparamss.nestedMap(i => Ident(i.name))
+            val select = Select(Ident(implTraitInstance.name), name)
+            val newRhs = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
+            // TODO: use context bounds or put the implicit instance in the correct position (implicit vparams)
+            DefDef(name, derivedTparams ::: tparams, vparamss ::: ((implTraitInstance :: Nil) :: Nil), tpt, newRhs)
+          } else {
+            println("An implementation already exists: " + rhs)
+            meth
+          }
+        }
+
+        // arst
+
+        val (members, infx, nm) = collectMethods(cdef)
+        val infx1 = infx.map(transformInfixMethod)
+        val nm1 = nm.map(transformNormalMethods)
+        val infixMethods = Nil// infx1
+        val normalMethods = nm1
 
         // implicit class Ops used to store binary (and n-ary) functions used in an infix fashion
         val opsClass = {
           // TODO Tparams : trait type(s) + ?
           val opsClsMods = Modifiers(Implicit) // TODO: Synthetic ?
-          val opsConstr = makeConstructor(derivedTparams, ListOfNil)
+          // TODO find why there is an error with no parameters
+          val opsConstr = makeConstructor(derivedTparams, (Nil) :: (implTraitInstance :: Nil) :: Nil)
           val cls = classDef(TypeDef("Ops".toTypeName,
-                                    Template(opsConstr, Nil, EmptyValDef, infixMethods))
-                              .withMods(opsClsMods))
+                                     Template(opsConstr, Nil, EmptyValDef, infixMethods))
+                               .withMods(opsClsMods))
 
           cls.withPos(cdef.pos)
         }
 
-        // SyntaxObject
+        // Syntax object
+        // TODO add trait members to the syntax obj ?
+        // For instance if we want do define an alias type T = A in the trait,
+        // we want have it in scope in the syntax obj if it is used in method
+        // signatures
         val syntaxObj = {
-          val syntaxObjMods = synthetic
           moduleDef(ModuleDef("syntax".toTermName,
                               Template(emptyConstructor, Nil, EmptyValDef, opsClass :: /*members ::: */normalMethods ::: Nil))
-                      .withMods(syntaxObjMods))
+                      .withMods(synthetic))
         }
 
         companionDefs(anyRef, syntaxObj :: applyMeth :: Nil)
