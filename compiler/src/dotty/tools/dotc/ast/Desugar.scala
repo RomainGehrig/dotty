@@ -525,16 +525,19 @@ object desugar {
         def transformNormalMethods(meth: DefDef): DefDef = {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
           val rhs = meth.forceIfLazy
-          if (rhs.isEmpty) {
-            val allParams = vparamss.nestedMap(i => Ident(i.name))
-            val select = Select(Ident(implTraitInstance.name), name)
-            val newRhs = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
-            // TODO: use context bounds or put the implicit instance in the correct position (implicit vparams)
-            DefDef(name, constrTparams ::: tparams, vparamss ::: ((implTraitInstance :: Nil) :: Nil), tpt, newRhs)
-          } else {
-            println("An implementation already exists: " + rhs)
-            meth
-          }
+          val allParams = vparamss.nestedMap(i => Ident(i.name))
+          val newRhs =
+            if (rhs.isEmpty) {
+              val select = Select(Ident(implTraitInstance.name), name)
+              if (allParams.length > 0)
+                allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
+              else
+                select
+            } else
+              rhs
+
+          // TODO: use context bounds or put the implicit instance in the correct position (implicit vparams)
+          DefDef(name, constrTparams ::: tparams, vparamss ::: ((implTraitInstance :: Nil) :: Nil), tpt, newRhs)
         }
 
         // arst
@@ -559,8 +562,6 @@ object desugar {
 
           cls.withPos(cdef.pos)
         }
-
-        println(opsClass.show)
 
         // Syntax object
         // TODO add trait members to the syntax obj ?
