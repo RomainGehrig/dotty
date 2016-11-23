@@ -542,6 +542,8 @@ class Definitions {
   def InlineAnnot(implicit ctx: Context) = InlineAnnotType.symbol.asClass
   lazy val InlineParamAnnotType = ctx.requiredClassRef("scala.annotation.internal.InlineParam")
   def InlineParamAnnot(implicit ctx: Context) = InlineParamAnnotType.symbol.asClass
+  lazy val TypeclassAnnotType = ctx.requiredClassRef("dotty.annotation.typeclass")
+  def TypeclassAnnot(implicit ctx: Context) = TypeclassAnnotType.symbol.asClass
   lazy val InvariantBetweenAnnotType = ctx.requiredClassRef("scala.annotation.internal.InvariantBetween")
   def InvariantBetweenAnnot(implicit ctx: Context) = InvariantBetweenAnnotType.symbol.asClass
   lazy val MigrationAnnotType = ctx.requiredClassRef("scala.annotation.migration")
