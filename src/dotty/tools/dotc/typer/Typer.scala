@@ -1164,6 +1164,30 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
     if (sym is Implicit) checkImplicitParamsNotSingletons(vparamss1)
     var tpt1 = checkSimpleKinded(typedType(tpt))
 
+    var rhs0 = ddef.rhs
+    if (ctx.phase.isTyper && !sym.isConstructor) {
+      // find the typeclass parameters
+      val tclss = vparamss1.flatten
+        .map(vparam => vparam.tpe.widenSingleton.classSymbol)
+        .filter(clsSym => clsSym.hasAnnotation(defn.TypeclassAnnot))
+        .distinct
+
+      var tclsImports = tclss.map(tcls => untpd.Import(untpd.Select(untpd.ref(tcls.linkedClass.sourceModule.valRef), "syntax".toTermName),
+                                                       List(untpd.Ident(nme.WILDCARD))))
+
+      if (!tclsImports.isEmpty) {
+        rhs0 match {
+          case Block(stats, expr) =>
+            rhs0 = untpd.cpy.Block(rhs0)(stats = tclsImports ::: stats, expr = expr)
+          case _ =>
+            def isExpr(stat: untpd.Tree) = !(stat.isDef || stat.isInstanceOf[untpd.Import])
+            val pos = ddef.pos
+            rhs0 = if (isExpr(rhs0)) untpd.Block(tclsImports, rhs0).withPos(pos)
+                   else untpd.Block(tclsImports :+ rhs0, untpd.EmptyTree).withPos(pos)
+        }
+      }
+    }
+
     var rhsCtx = ctx
     if (sym.isConstructor && !sym.isPrimaryConstructor && tparams1.nonEmpty) {
       // for secondary constructors we need a context that "knows"
@@ -1173,7 +1197,7 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
       (tparams1, sym.owner.typeParams).zipped.foreach ((tdef, tparam) =>
         rhsCtx.gadt.setBounds(tdef.symbol, TypeAlias(tparam.typeRef)))
     }
-    val rhs1 = typedExpr(ddef.rhs, tpt1.tpe)(rhsCtx)
+    val rhs1 = typedExpr(rhs0, tpt1.tpe)(rhsCtx)
 
     // Overwrite inline body to make sure it is not evaluated twice
     if (sym.hasAnnotation(defn.InlineAnnot))
