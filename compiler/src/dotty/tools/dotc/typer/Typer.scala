@@ -1185,6 +1185,35 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
       patch(Position(toUntyped(vdef).pos.start), "@volatile ")
   }
 
+  private def insertImports(tree: untpd.Tree, imports: List[untpd.Import])(implicit ctx: Context): untpd.Tree = {
+    if (imports.isEmpty) {
+      tree
+    } else {
+      tree match {
+        case Block(stats, expr) =>
+          untpd.cpy.Block(tree)(stats = imports ::: stats, expr = expr)
+        case _ =>
+          def isExpr(stat: untpd.Tree) = !(stat.isDef || stat.isInstanceOf[untpd.Import])
+          if (isExpr(tree))
+            untpd.Block(imports, tree).withPos(tree.pos)
+          else
+            untpd.Block(imports :+ tree, untpd.EmptyTree).withPos(tree.pos)
+      }
+    }
+  }
+
+  private def createTypeClassImports(params: List[ValDef])(implicit ctx: Context): List[untpd.Import] = {
+    val tclss = params.map(param => param.tpe.widenSingleton.classSymbol)
+      .filter(clsSym => clsSym.hasAnnotation(defn.TypeclassAnnot)) // first filter to reduce number of parents
+      .flatMap(clsSym => clsSym.info.baseClasses)
+      .filter(clsSym => clsSym.hasAnnotation(defn.TypeclassAnnot))
+      .distinct
+
+    tclss.map(tcls => untpd.Import(
+                untpd.Select(untpd.ref(tcls.linkedClass.sourceModule.valRef), "syntax".toTermName),
+                List(untpd.Ident(nme.WILDCARD))))
+  }
+
   def typedDefDef(ddef: untpd.DefDef, sym: Symbol)(implicit ctx: Context) = track("typedDefDef") {
     val DefDef(name, tparams, vparamss, tpt, _) = ddef
     completeAnnotations(ddef, sym)
@@ -1193,28 +1222,12 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
     if (sym is Implicit) checkImplicitParamsNotSingletons(vparamss1)
     var tpt1 = checkSimpleKinded(typedType(tpt))
 
-    var rhs0 = ddef.rhs
-    if (ctx.phase.isTyper && !sym.isConstructor) {
-      // find the typeclass parameters
-      val tclss = vparamss1.flatten
-        .map(vparam => vparam.tpe.widenSingleton.classSymbol)
-        .filter(clsSym => clsSym.hasAnnotation(defn.TypeclassAnnot))
-        .distinct
-
-      var tclsImports = tclss.map(tcls => untpd.Import(untpd.Select(untpd.ref(tcls.linkedClass.sourceModule.valRef), "syntax".toTermName),
-                                                       List(untpd.Ident(nme.WILDCARD))))
-
-      if (!tclsImports.isEmpty) {
-        rhs0 match {
-          case Block(stats, expr) =>
-            rhs0 = untpd.cpy.Block(rhs0)(stats = tclsImports ::: stats, expr = expr)
-          case _ =>
-            def isExpr(stat: untpd.Tree) = !(stat.isDef || stat.isInstanceOf[untpd.Import])
-            val pos = ddef.pos
-            rhs0 = if (isExpr(rhs0)) untpd.Block(tclsImports, rhs0).withPos(pos)
-                   else untpd.Block(tclsImports :+ rhs0, untpd.EmptyTree).withPos(pos)
-        }
+    val rhs0 = {
+      if (ctx.phase.isTyper && !sym.isConstructor) {
+        insertImports(ddef.rhs, createTypeClassImports(vparamss1.flatten))
       }
+      else
+        ddef.rhs
     }
 
     var rhsCtx = ctx
@@ -1304,6 +1317,10 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
 
     completeAnnotations(cdef, cls)
     val constr1 = typed(constr).asInstanceOf[DefDef]
+    val imports = if (ctx.phase.isTyper) {
+      createTypeClassImports(constr1.vparamss.flatten)
+    } else Nil
+
     val parentsWithClass = ensureFirstIsClass(parents mapconserve typedParent, cdef.pos.toSynthetic)
     val parents1 = ensureConstrCall(cls, parentsWithClass)(superCtx)
     val self1 = typed(self)(ctx.outer).asInstanceOf[ValDef] // outer context where class members are not visible
