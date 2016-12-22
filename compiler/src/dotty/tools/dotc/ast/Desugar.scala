@@ -513,23 +513,18 @@ object desugar {
         def transformInfixMethod(meth: DefDef): DefDef = {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
           val rhs = meth.forceIfLazy
-          if (rhs.isEmpty) {
-            vparamss match {
-              // TODO which is the correct type to check ? Should the typeclasses
-              // be constrained to exactly one T param ? For now we assume correct type
-              case (x@(ValDef(_, _, valRhs) :: params) :: vparams) =>
-                val allParams = ((classArgParam :: params) :: vparams).nestedMap(i => Ident(i.name))
-                val select = Select(Ident(implTraitInstance.name), name)
-                val methApply = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
-                val newTparams = if (tparams.length > 0) tparams.tail else Nil
-                DefDef(name, newTparams, params :: vparams, tpt, methApply)
-              case _ =>
-                ctx.error("Method was declared infix but no matching argument was found", cdef.pos)
-                meth
-            }
-          } else {
-            println("An implementation already exists: " + rhs)
-            meth
+          vparamss match {
+            // TODO which is the correct type to check ? For now we assume correct type
+            case (x@(ValDef(_, _, valRhs) :: params) :: vparams) =>
+              val allParams = ((classArgParam :: params) :: vparams).nestedMap(i => Ident(i.name))
+              val select = Select(Ident(implTraitInstance.name), name)
+              val methApply = allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
+              // TODO: Be a bit more thoughtful about the t params stripping
+              val newTparams = if (tparams.length > 0) tparams.tail else Nil
+              DefDef(name, newTparams, params :: vparams, tpt, methApply)
+            case _ =>
+              ctx.error("Method was declared infix but no matching argument was found", cdef.pos)
+              meth
           }
         }
 
@@ -537,17 +532,13 @@ object desugar {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
           val rhs = meth.forceIfLazy
           val allParams = vparamss.nestedMap(i => Ident(i.name))
-          val newRhs =
-            if (rhs.isEmpty) {
-              val select = Select(Ident(implTraitInstance.name), name)
-              if (allParams.length > 0)
-                allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
-              else
-                select
-            } else {
-              println(s"Already an implementation: ${rhs.show}")
-              rhs
-            }
+          val newRhs = {
+            val select = Select(Ident(implTraitInstance.name), name)
+            if (allParams.length > 0)
+              allParams.tail.foldLeft(Apply(select, allParams.head))(Apply)
+            else
+              select
+          }
 
           // DONE: use context bounds or put the implicit instance in the correct position (implicit vparams)
           val newVparamss = vparamss.reverse match {
@@ -599,7 +590,7 @@ object desugar {
     val implicitWrappers =
       if (!mods.is(Implicit))
         Nil
-    /* Temporarly commented for testing purposes
+    /* TODO Temporarly commented for testing purposes
       else if (ctx.owner is Package) {
         ctx.error(TopLevelImplicitClass(cdef), cdef.pos)
         Nil

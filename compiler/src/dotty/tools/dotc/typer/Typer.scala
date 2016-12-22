@@ -1185,13 +1185,17 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
       patch(Position(toUntyped(vdef).pos.start), "@volatile ")
   }
 
-  private def insertImports(tree: untpd.Tree, imports: List[untpd.Import])(implicit ctx: Context): untpd.Tree = {
+  private def insertImports(tree: untpd.Tree, imports: List[untpd.Import], nested: Boolean = false)(implicit ctx: Context): untpd.Tree = {
     if (imports.isEmpty) {
       tree
     } else {
       tree match {
         case Block(stats, expr) =>
-          untpd.cpy.Block(tree)(stats = imports ::: stats, expr = expr)
+          if (nested) {
+            imports.foldLeft(tree)((blk, imp) => untpd.Block(imp :: Nil, blk))
+          }
+          else
+            untpd.cpy.Block(tree)(stats = imports ::: stats, expr = expr)
         case _ =>
           def isExpr(stat: untpd.Tree) = !(stat.isDef || stat.isInstanceOf[untpd.Import])
           if (isExpr(tree))
@@ -1224,7 +1228,19 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
 
     val rhs0 = {
       if (ctx.phase.isTyper && !sym.isConstructor) {
-        insertImports(ddef.rhs, createTypeClassImports(vparamss1.flatten))
+        /*
+         // TODO remove test code
+        val testImport = {
+          untpd.Import(
+            untpd.Select(untpd.Ident("dotty".toTermName), "annotation".toTermName),
+            List(untpd.Ident(nme.WILDCARD)))
+        }
+
+        if (!ddef.rhs.isEmpty)
+          insertImports(ddef.rhs, testImport :: createTypeClassImports(vparamss1.flatten))
+        else */
+
+        insertImports(ddef.rhs, createTypeClassImports(vparamss1.flatten), nested=true)
       }
       else
         ddef.rhs
@@ -1324,8 +1340,12 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
     val parentsWithClass = ensureFirstIsClass(parents mapconserve typedParent, cdef.pos.toSynthetic)
     val parents1 = ensureConstrCall(cls, parentsWithClass)(superCtx)
     val self1 = typed(self)(ctx.outer).asInstanceOf[ValDef] // outer context where class members are not visible
+    val body0 = if (ctx.phase.isTyper) {
+      imports.map(_.withPos(impl.pos)) ::: impl.body
+    } else impl.body
     val dummy = localDummy(cls, impl)
-    val body1 = typedStats(impl.body, dummy)(inClassContext(self1.symbol))
+    // Trying to add imports into the class body
+    val body1 = typedStats(body0, dummy)(inClassContext(self1.symbol))
 
     // Expand comments and type usecases
     cookComments(body1.map(_.symbol), self1.symbol)(localContext(cdef, cls).setNewScope)
@@ -1573,6 +1593,19 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
           makeImplicitFunction(xtree, pt)
         else xtree match {
           case xtree: untpd.NameTree => typedNamed(encodeName(xtree), pt)
+          case xtree: untpd.Import =>
+            val sym0 = retrieveSym(xtree)
+            if (ctx.phase.isTyper) {
+              val sym =
+                if (sym0 eq NoSymbol) {
+                  index(xtree)
+                  retrieveSym(xtree)
+                } else sym0
+              assert(sym ne NoSymbol)
+              typedImport(xtree, sym)
+            } else {
+              typedImport(xtree, sym0)
+            }
           case xtree => typedUnnamed(xtree)
         }
     }
