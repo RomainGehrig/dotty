@@ -476,7 +476,7 @@ object desugar {
 
         val rawTparams = constr1.tparams.map(tparam => cpy.TypeDef(tparam)())
         // TODO: zero order
-        val isHigherKinded = rawTparams.headOption.map(_.isInstanceOf[PolyTypeDef]).getOrElse(false)
+        val isHigherKinded = rawTparams.headOption.map(_.isInstanceOf[PolyTypeTree]).getOrElse(false)
 
         // implicit class Ops[F[_], A](fa: F[A])(implicit F: Monad[F])
         //                          ^ decl   ^ used here
