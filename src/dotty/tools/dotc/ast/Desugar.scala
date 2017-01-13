@@ -553,7 +553,7 @@ object desugar {
           val opsClsMods = Modifiers(Implicit) // TODO: Synthetic ?
           val opsConstr = makeConstructor(classArgType.toList ::: rawTparams,
                                           (classArgParam :: Nil) :: (implTraitInstance :: Nil) :: Nil)
-          val cls = classDef(TypeDef("Ops".toTypeName,
+          val cls = classDef(TypeDef(("Ops$" + cdef.name).toTypeName,
                                      Template(opsConstr, Nil, EmptyValDef, infixMethods))
                                .withMods(opsClsMods))
 
