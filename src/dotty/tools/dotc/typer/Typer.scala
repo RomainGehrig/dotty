@@ -1207,18 +1207,6 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
 
     val rhs0 = {
       if (ctx.phase.isTyper && !sym.isConstructor) {
-        /*
-         // TODO remove test code
-        val testImport = {
-          untpd.Import(
-            untpd.Select(untpd.Ident("dotty".toTermName), "annotation".toTermName),
-            List(untpd.Ident(nme.WILDCARD)))
-        }
-
-        if (!ddef.rhs.isEmpty)
-          insertImports(ddef.rhs, testImport :: createTypeClassImports(vparamss1.flatten))
-        else */
-
         insertImports(ddef.rhs, createTypeClassImports(vparamss1.flatten), nested=true)
       }
       else
