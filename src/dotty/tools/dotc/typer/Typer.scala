@@ -1160,19 +1160,27 @@ class Typer extends Namer with TypeAssigner with Applications with Implicits wit
     if (imports.isEmpty) {
       tree
     } else {
+      // TODO: find a more general and readable way of adding block (and nesting)
       tree match {
         case Block(stats, expr) =>
-          if (nested) {
+          if (nested)
             imports.foldLeft(tree)((blk, imp) => untpd.Block(imp :: Nil, blk))
-          }
           else
             untpd.cpy.Block(tree)(stats = imports ::: stats, expr = expr)
         case _ =>
           def isExpr(stat: untpd.Tree) = !(stat.isDef || stat.isInstanceOf[untpd.Import])
-          if (isExpr(tree))
-            untpd.Block(imports, tree).withPos(tree.pos)
-          else
-            untpd.Block(imports :+ tree, untpd.EmptyTree).withPos(tree.pos)
+          if (isExpr(tree)) {
+            if (nested)
+              imports.foldLeft(untpd.Block(Nil, tree))((blk, imp) => untpd.Block(imp :: Nil, blk))
+            else
+              untpd.Block(imports, tree).withPos(tree.pos)
+          }
+          else {
+            if (nested)
+              imports.foldLeft(untpd.Block(tree, untpd.EmptyTree))((blk, imp) => untpd.Block(imp :: Nil, blk))
+            else
+              untpd.Block(imports :+ tree, untpd.EmptyTree).withPos(tree.pos)
+          }
       }
     }
   }
