@@ -30,26 +30,20 @@ object OptionMonad extends Monad[Option] {
 object Use {
   implicit val op: Monad[Option] = OptionMonad
 
-  def monadUnit[A, F[_]: Monad](a: A): F[A] = {
+  def monadUnit[A, F[_]: Monad](a: A): F[A] =
     unit(a)
-  }
 
-  def monadFlatMap[A, F[_]: Monad](f: F[A]): F[A] = {
+  def monadFlatMap[A, F[_]: Monad](f: F[A]): F[A] =
     f flatMap pure
-  }
 
-  def monadJoin[A, F[_]: Monad](f: F[F[A]]): F[A] = {
+  def monadJoin[A, F[_]: Monad](f: F[F[A]]): F[A] =
     f.join()
-  }
 
-  def monadMap[A, F[_]: Monad](f: F[A]): F[A] = {
-    // Workaround for `f map identity` (infix use of functor)
-    Monad[F].map(f, identity)
-  }
-
-  def functorMap[A, F[_]: Functor](f: F[A]): F[A] = {
+  def monadMap[A, F[_]: Monad](f: F[A]): F[A] =
     f map identity
-  }
+
+  def functorMap[A, F[_]: Functor](f: F[A]): F[A] =
+    f map identity
 
   def main(args: Array[String]) = {
     val x: Option[_] = Some(10)
