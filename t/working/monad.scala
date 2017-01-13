@@ -6,7 +6,7 @@ import dotty.annotation._
 
 @typeclass trait Applicative[F[_]] extends Functor[F] {
   def pure[A](a: A): F[A]
-  @infix def ap[A,B](fa: F[A], f: F[A => B], b: F[B]): F[B]
+  @infix def ap[A,B](a: F[A], f: F[A => B]): F[B]
 }
 
 @typeclass trait Monad[F[_]] extends Applicative[F] {
@@ -16,14 +16,15 @@ import dotty.annotation._
 }
 
 object OptionMonad extends Monad[Option] {
-  override def flatMap[A,B](fa: Option[A], f: A => Option[B]): Option[B] = fa match {
+  def flatMap[A,B](fa: Option[A], f: A => Option[B]): Option[B] = fa match {
     case Some(x) => f(x)
     case None => None
   }
-
-  override def pure[A](a: A): Option[A] = Some(a)
-  override def map[A, B](a: Option[A], f: A => B): Option[B] = a.flatMap(x => Some(f(x)))
-  override def ap[A, B](fa: Option[A], f: Option[A => B], b: Option[B]): Option[B] = ???
+  def pure[A](a: A): Option[A] = Some(a)
+  def map[A, B](a: Option[A], f: A => B): Option[B] =
+    a.flatMap(x => Some(f(x)))
+  def ap[A, B](a: Option[A], f: Option[A => B]): Option[B] =
+    a.flatMap(x => f.map(_.apply(x)))
 }
 
 object Use {
