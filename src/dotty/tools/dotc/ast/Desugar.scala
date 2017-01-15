@@ -469,17 +469,18 @@ object desugar {
         // TODO: zero order
         val isHigherKinded = rawTparams.headOption.map(_.isInstanceOf[PolyTypeDef]).getOrElse(false)
 
-        // implicit class Ops[F[_], A](fa: F[A])(implicit F: Monad[F])
-        //                          ^ decl   ^ used here
+        // implicit class Ops$FooHK[A,F[_]](x$1: F[A])(implicit x$2: FooHK[F])
+        //                          ^ declaration  ^ used here
         // We don't need a parameter when the typeclass is a first order type
-        // TODO: use ctx.freshName to create the A
+        // because `A` already exists
         val classArgType = if (isHigherKinded)
+            // TODO: use ctx.freshName to create the A
             Some(TypeDef("A".toTypeName, TypeBoundsTree(EmptyTree,EmptyTree)).withFlags(PrivateLocalParam))
           else
             None
 
-        // class Ops[A,F[_]](x$1: F[A])(implicit x$2: Concrete[F])
-        //                   ^^^^^^^^^
+        // implicit class Ops$FooHK[A,F[_]](x$1: F[A])(implicit x$2: FooHK[F])
+        //                                  ^^^^^^^^^
         val classArgParam = {
           // TODO: strip correctly the constTparams (some types already exist)
           // TODO: constrTparams can be empty => zero-th order/nullary typeclass
@@ -490,9 +491,8 @@ object desugar {
           p.withMods(p.mods | ParamAccessor)
         }
 
-        // class Ops[A,F[_]](x$1: F[A])(implicit x$2: Concrete[F])
-        //                              ^^^^^^^^^^^^^^^^^^^^^^^^^
-        // DONE: Handles first order types
+        // implicit class Ops$FooHK[A,F[_]](x$1: F[A])(implicit x$2: FooHK[F])
+        //                                             ^^^^^^^^^^^^^^^^^^^^^^
         val implTraitInstance = {
           val param = makeSyntheticParameter(2, tpt=classTypeRef)
           param.withMods(param.mods | Implicit | ParamAccessor)
@@ -503,9 +503,7 @@ object desugar {
         // - ?
         def transformInfixMethod(meth: DefDef): DefDef = {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
-          val rhs = meth.forceIfLazy
           vparamss match {
-            // TODO which is the correct type to check ? For now we assume correct type
             case (x@(ValDef(_, _, valRhs) :: params) :: vparams) =>
               val allParams = ((classArgParam :: params) :: vparams).nestedMap(i => Ident(i.name))
               val select = Select(Ident(implTraitInstance.name), name)
@@ -521,7 +519,6 @@ object desugar {
 
         def transformNormalMethods(meth: DefDef): DefDef = {
           val DefDef(name, tparams, vparamss, tpt, _) = meth
-          val rhs = meth.forceIfLazy
           val allParams = vparamss.nestedMap(i => Ident(i.name))
           val newRhs = {
             val select = Select(Ident(implTraitInstance.name), name)
@@ -530,8 +527,6 @@ object desugar {
             else
               select
           }
-
-          // DONE: use context bounds or put the implicit instance in the correct position (implicit vparams)
           val newVparamss = vparamss.reverse match {
             case (vparams @ (vparam :: _)) :: rvparamss if vparam.mods is Implicit =>
               ((vparams ::: implTraitInstance :: Nil) :: rvparamss).reverse
@@ -541,11 +536,9 @@ object desugar {
           DefDef(name, constrTparams ::: tparams, newVparamss, tpt, newRhs)
         }
 
-        // arst
-
-        val (members, infx, nm) = collectMethods(cdef)
-        val infixMethods = infx.map(transformInfixMethod).map(defDef(_))
-        val normalMethods = nm.map(transformNormalMethods).map(defDef(_))
+        val (members, infix, normal) = collectMethods(cdef)
+        val infixMethods = infix.map(transformInfixMethod).map(defDef(_))
+        val normalMethods = normal.map(transformNormalMethods).map(defDef(_))
 
         // implicit class Ops used to store binary (and n-ary) functions used in an infix fashion
         val opsClass = {
