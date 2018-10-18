@@ -6,10 +6,6 @@ import TypeErasure.ErasedValueType
 import Types._
 import Contexts._
 import Symbols._
-import Decorators._
-import StdNames.nme
-import NameOps._
-import language.implicitConversions
 
 object TypeUtils {
   /** A decorator that provides methods on types
@@ -50,5 +46,9 @@ object TypeUtils {
         else if (defn.isTupleClass(tp1.classSymbol)) tp1.dealias.argInfos
         else throw new AssertionError("not a tuple")
     }
+
+    /** The `*:` equivalent of an instantce of a Tuple class */
+    def toNestedPairs(implicit ctx: Context): Type =
+      (tupleElementTypes :\ (defn.UnitType: Type))(defn.PairType.appliedTo(_, _))
   }
 }

@@ -11,7 +11,7 @@ object Asserts {
 
   object Ops
 
-  rewrite def macroAssert(cond: => Boolean): Unit =
+  inline def macroAssert(cond: => Boolean): Unit =
     ~impl('(cond))
 
   def impl(cond: Expr[Boolean])(implicit tasty: Tasty): Expr[Unit] = {
@@ -20,11 +20,7 @@ object Asserts {
     val tree = cond.toTasty
 
     def isOps(tpe: TypeOrBounds): Boolean = tpe match {
-      case Type.SymRef(sym, _) =>
-        sym.tree match {
-          case Some(DefDef("Ops", _, _, _, _)) => true // TODO check that the parent is Asserts
-          case _ => false
-        }
+      case Type.SymRef(IsDefSymbol(sym), _) => sym.name == "Ops"// TODO check that the parent is Asserts
       case _ => false
     }
 

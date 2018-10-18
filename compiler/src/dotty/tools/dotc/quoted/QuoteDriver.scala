@@ -2,7 +2,7 @@ package dotty.tools.dotc.quoted
 
 import dotty.tools.dotc.ast.tpd
 import dotty.tools.dotc.Driver
-import dotty.tools.dotc.core.Contexts.{Context, ContextBase}
+import dotty.tools.dotc.core.Contexts.{Context, ContextBase, FreshContext}
 import dotty.tools.dotc.tastyreflect.TastyImpl
 import dotty.tools.io.{AbstractFile, Directory, PlainDirectory, VirtualDirectory}
 import dotty.tools.repl.AbstractFileClassLoader
@@ -27,7 +27,7 @@ class QuoteDriver extends Driver {
     }
 
     val (_, ctx0: Context) = setup(settings.compilerArgs.toArray :+ "dummy.scala", initCtx.fresh)
-    val ctx = ctx0.fresh.setSetting(ctx0.settings.outputDir, outDir)
+    val ctx = setColor(ctx0.fresh.setSetting(ctx0.settings.outputDir, outDir), settings)
 
     val driver = new QuoteCompiler
     driver.newRun(ctx).compileExpr(expr)
@@ -50,7 +50,7 @@ class QuoteDriver extends Driver {
   }
 
   def withTree[T](expr: Expr[_], f: (Tree, Context) => T, settings: Toolbox.Settings): T = {
-    val (_, ctx: Context) = setup(settings.compilerArgs.toArray :+ "dummy.scala", initCtx.fresh)
+    val ctx = setColor(setup(settings.compilerArgs.toArray :+ "dummy.scala", initCtx.fresh)._2.fresh, settings)
 
     var output: Option[T] = None
     def registerTree(tree: tpd.Tree)(ctx: Context): Unit = {
@@ -75,17 +75,27 @@ class QuoteDriver extends Driver {
 
   override def initCtx: Context = {
     val ictx = contextBase.initialCtx
-    var classpath = System.getProperty("java.class.path")
+    ictx.settings.classpath.update(QuoteDriver.currentClasspath)(ictx)
+    ictx
+  }
+
+  private def setColor(ctx: FreshContext, settings: Toolbox.Settings): FreshContext =
+    ctx.setSetting(ctx.settings.color, if (settings.color) "always" else "never")
+
+}
+
+object QuoteDriver {
+
+  def currentClasspath: String = {
+    val classpath0 = System.getProperty("java.class.path")
     this.getClass.getClassLoader match {
       case cl: URLClassLoader =>
         // Loads the classes loaded by this class loader
         // When executing `run` or `test` in sbt the classpath is not in the property java.class.path
         val newClasspath = cl.getURLs.map(_.getFile())
-        classpath = newClasspath.mkString("", java.io.File.pathSeparator, if (classpath == "") "" else java.io.File.pathSeparator + classpath)
-      case _ =>
+        newClasspath.mkString("", java.io.File.pathSeparator, if (classpath0 == "") "" else java.io.File.pathSeparator + classpath0)
+      case _ => classpath0
     }
-    ictx.settings.classpath.update(classpath)(ictx)
-    ictx
   }
 
 }

@@ -2,7 +2,6 @@ package dotty.tools.dotc.tastyreflect
 
 import dotty.tools.dotc.core.Symbols._
 
-import dotty.tools.dotc.tastyreflect.FromSymbol._
 
 trait StandardDefinitions extends scala.tasty.reflect.StandardDefinitions {
     tasty: TastyImpl =>
@@ -58,7 +57,6 @@ trait StandardDefinitions extends scala.tasty.reflect.StandardDefinitions {
     def FunctionClass(arity: Int, isImplicit: Boolean = false, isErased: Boolean = false): Symbol =
       defn.FunctionClass(arity, isImplicit, isErased).asClass
     def TupleClass(arity: Int): Symbol = defn.TupleType(arity).classSymbol.asClass
-
 
     def ScalaPrimitiveValueClasses: List[Symbol] =
       UnitClass :: BooleanClass :: ScalaNumericValueClasses

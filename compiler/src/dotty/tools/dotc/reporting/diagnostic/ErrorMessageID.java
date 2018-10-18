@@ -125,14 +125,21 @@ public enum ErrorMessageID {
     UnableToEmitSwitchID,
     MissingCompanionForStaticID,
     PolymorphicMethodMissingTypeInParentID,
-    ParamsNoTransparentID,
+    ParamsNoInlineID,
     JavaSymbolIsNotAValueID,
     DoubleDeclarationID,
     MatchCaseOnlyNullWarningID,
     ImportRenamedTwiceID,
     TypeTestAlwaysSucceedsID,
     TermMemberNeedsNeedsResultTypeForImplicitSearchID,
-    CaseClassCannotExtendEnumID
+    CaseClassCannotExtendEnumID,
+    ValueClassParameterMayNotBeCallByNameID,
+    NotAnExtractorID,
+    MemberWithSameNameAsStaticID,
+    PureExpressionInStatementPositionID,
+    TraitCompanionWithMutableStaticID,
+    LazyStaticFieldID,
+    StaticOverridingNonStaticMembersID
     ;
 
     public int errorNumber() {

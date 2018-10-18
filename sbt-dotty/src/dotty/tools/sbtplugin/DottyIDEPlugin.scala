@@ -5,6 +5,7 @@ import sbt.Def.Initialize
 import sbt.Keys._
 import java.io._
 import java.lang.ProcessBuilder
+import java.lang.ProcessBuilder.Redirect
 import scala.collection.mutable
 import scala.util.Properties.{ isWin, isMac }
 
@@ -146,23 +147,66 @@ object DottyIDEPlugin extends AutoPlugin {
     if (isWin) Seq("cmd.exe", "/C") ++ cmd
     else cmd
 
-  /** Run `cmd`.
-   *  @param wait  If true, wait for `cmd` to return and throw an exception if the exit code is non-zero.
-   *  @param directory  If not null, run `cmd` in this directory.
+  /** Run the command `cmd`.
+   *
+   *  @param wait  If true, wait for the command to return and throw an exception if the exit code is non-zero.
+   *  @param directory  If not None, run the command in this directory.
+   *  @param outputCallback If not None, pass the command output to this callback instead of writing it to stdout.
    */
-  def runProcess(cmd: Seq[String], wait: Boolean = false, directory: File = null): Unit = {
-    val pb = new ProcessBuilder(prepareCommand(cmd): _*).inheritIO()
-    if (directory != null) pb.directory(directory)
+  def runProcess(cmd: Seq[String], wait: Boolean = false, directory: Option[File] = None, outputCallback: Option[BufferedReader => Unit] = None): Unit = {
+    val pb = new ProcessBuilder(prepareCommand(cmd): _*)
+
+    directory match {
+      case Some(dir) =>
+        pb.directory(dir)
+      case None =>
+    }
+
+    pb.redirectInput(Redirect.INHERIT)
+      .redirectError(Redirect.INHERIT)
+      .redirectOutput(
+        outputCallback match {
+          case Some(_) =>
+            Redirect.PIPE
+          case None =>
+            Redirect.INHERIT
+        })
+
+    val process = pb.start()
+    outputCallback match {
+      case Some(callback) =>
+        callback(new BufferedReader(new InputStreamReader(process.getInputStream)))
+      case None =>
+    }
     if (wait) {
-      val exitCode = pb.start().waitFor()
+      val exitCode = process.waitFor()
       if (exitCode != 0) {
         val cmdString = cmd.mkString(" ")
         val description = if (directory != null) s""" in directory "$directory"""" else ""
         throw new MessageOnlyException(s"""Running command "${cmdString}"${description} failed.""")
       }
     }
-    else
-      pb.start()
+  }
+
+  /** Install or upgrade Code extension `name`.
+   *
+   *  We start by trying to install or upgrade the extension. If this fails we
+   *  check if an existing version of the extension exists. If this also fails
+   *  we throw an exception. This ensures that we're always running the latest
+   *  version of the extension but that we can still work offline.
+   */
+  def installCodeExtension(codeCmd: Seq[String], name: String): Unit = {
+    try {
+      runProcess(codeCmd ++ Seq("--install-extension", name), wait = true)
+    } catch {
+      case e: Exception =>
+        var alreadyInstalled: Boolean = false
+        runProcess(codeCmd ++ Seq("--list-extensions"), wait = true, outputCallback = Some({ br =>
+          alreadyInstalled = br.lines.filter(_ == name).findFirst.isPresent
+        }))
+        if (!alreadyInstalled)
+          throw e
+    }
   }
 
   private val projectConfig = taskKey[Option[ProjectConfig]]("")
@@ -226,7 +270,15 @@ object DottyIDEPlugin extends AutoPlugin {
   }
 
   private def projectConfigTask(config: Configuration): Initialize[Task[Option[ProjectConfig]]] = Def.taskDyn {
-    if ((sources in config).value.isEmpty) Def.task { None }
+    val depClasspath = Attributed.data((dependencyClasspath in config).value)
+
+    // Try to detect if this is a real Scala project or not. This is pretty
+    // fragile because sbt simply does not keep track of this information. We
+    // could check if at least one source file ends with ".scala" but that
+    // doesn't work for empty projects.
+    val isScalaProject = depClasspath.exists(_.getAbsolutePath.contains("dotty-library")) && depClasspath.exists(_.getAbsolutePath.contains("scala-library"))
+
+    if (!isScalaProject) Def.task { None }
     else Def.task {
       // Not needed to generate the config, but this guarantees that the
       // generated config is usable by an IDE without any extra compilation
@@ -237,7 +289,6 @@ object DottyIDEPlugin extends AutoPlugin {
       val compilerVersion = (scalaVersion in config).value
       val compilerArguments = (scalacOptions in config).value
       val sourceDirectories = (unmanagedSourceDirectories in config).value ++ (managedSourceDirectories in config).value
-      val depClasspath = Attributed.data((dependencyClasspath in config).value)
       val classDir = (classDirectory in config).value
 
       Some(new ProjectConfig(
@@ -270,8 +321,9 @@ object DottyIDEPlugin extends AutoPlugin {
 
     runCode := {
       try {
-        runProcess(codeCommand.value ++ Seq("--install-extension", "lampepfl.dotty"), wait = true)
-        runProcess(codeCommand.value ++ Seq("."), directory = baseDirectory.value)
+        installCodeExtension(codeCommand.value, "lampepfl.dotty")
+
+        runProcess(codeCommand.value ++ Seq("."), directory = Some(baseDirectory.value))
       } catch {
         case ioex: IOException if ioex.getMessage.startsWith("""Cannot run program "code"""") =>
           val log = streams.value.log

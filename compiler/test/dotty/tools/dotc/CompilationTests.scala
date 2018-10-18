@@ -48,7 +48,7 @@ class CompilationTests extends ParallelTesting {
     compileFile("tests/pos-special/completeFromSource/Test2.scala", defaultOptions.and("-sourcepath", "tests/pos-special")) +
     compileFile("tests/pos-special/completeFromSource/Test3.scala", defaultOptions.and("-sourcepath", "tests/pos-special", "-scansource")) +
     compileFile("tests/pos-special/completeFromSource/nested/Test4.scala", defaultOptions.and("-sourcepath", "tests/pos-special", "-scansource")) +
-    compileFilesInDir("tests/pos-special/fatal-warnings", defaultOptions.and("-Xfatal-warnings")) +
+    compileFilesInDir("tests/pos-special/fatal-warnings", defaultOptions.and("-Xfatal-warnings", "-feature")) +
     compileList(
       "compileMixed",
       List(
@@ -146,6 +146,7 @@ class CompilationTests extends ParallelTesting {
     compileFilesInDir("tests/neg", defaultOptions) +
     compileFilesInDir("tests/neg-tailcall", defaultOptions) +
     compileFilesInDir("tests/neg-kind-polymorphism", defaultOptions and "-Ykind-polymorphism") +
+    compileFilesInDir("tests/neg-custom-args/deprecation", defaultOptions.and("-Xfatal-warnings", "-deprecation")) +
     compileFilesInDir("tests/neg-custom-args/fatal-warnings", defaultOptions.and("-Xfatal-warnings")) +
     compileFilesInDir("tests/neg-custom-args/allow-double-bindings", allowDoubleBindings) +
     compileDir("tests/neg-custom-args/impl-conv", defaultOptions.and("-Xfatal-warnings", "-feature")) +
@@ -161,6 +162,7 @@ class CompilationTests extends ParallelTesting {
     compileFile("tests/neg-custom-args/i1754.scala", allowDeepSubtypes) +
     compileFilesInDir("tests/neg-custom-args/isInstanceOf", allowDeepSubtypes and "-Xfatal-warnings") +
     compileFile("tests/neg-custom-args/i3627.scala", allowDeepSubtypes) +
+    compileFile("tests/neg-custom-args/matchtype-loop.scala", allowDeepSubtypes) +
     compileFile("tests/neg-custom-args/completeFromSource/nested/Test1.scala", defaultOptions.and("-sourcepath", "tests/neg-custom-args", "-scansource"))
   }.checkExpectedErrors()
 
@@ -168,6 +170,7 @@ class CompilationTests extends ParallelTesting {
 
   @Test def runAll: Unit = {
     implicit val testGroup: TestGroup = TestGroup("runAll")
+    compileFilesInDir("tests/run-custom-args/Yretain-trees", defaultOptions and "-Yretain-trees") +
     compileFilesInDir("tests/run", defaultOptions)
   }.checkRuns()
 
