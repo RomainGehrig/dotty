@@ -178,7 +178,6 @@ class ReplDriver(settings: Array[String],
   }
 
   private def interpret(res: ParseResult)(implicit state: State): State = {
-    println(s"Interpreting $res")
     val newState = res match {
       case parsed: Parsed if parsed.trees.nonEmpty =>
         compile(parsed, state)
@@ -188,10 +187,10 @@ class ReplDriver(settings: Array[String],
         state
 
       case cmd: Command =>
+        println(s"Received command $cmd")
         interpretCommand(cmd)
 
-      case SigKill => // TODO
-        println("SigKill received")
+      case SigInt => // TODO
         state
 
       case _ => // new line, empty tree

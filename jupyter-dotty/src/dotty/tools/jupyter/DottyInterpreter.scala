@@ -1,6 +1,7 @@
 package dotty.tools
 package jupyter
 
+import sun.misc.{Signal, SignalHandler}
 import java.io.{ByteArrayOutputStream, PrintStream}
 import java.nio.charset.StandardCharsets.UTF_8
 
@@ -36,7 +37,7 @@ class DottyInterpreter(classLoader: Option[ClassLoader]) extends Interpreter {
   @volatile private var count = 0
 
   private val resultOutput = new StringBuilder
-  private val resultStream = new FunctionOutputStream(20, 20, UTF_8, resultOutput.append(_))
+  private val resultStream = new FunctionOutputStream(2000, 2000, UTF_8, resultOutput.append(_))
   // private val replDriver = new ReplDriver(settings=Array[String]("-classpath", "/home/cranium/.ivy2/local/ch.epfl.lamp/dotty-library_0.11/0.11.0-bin-SNAPSHOT/jars/dotty-library_0.11.jar:/home/cranium/.coursier/cache/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.7/scala-library-2.12.7.jar"),
   private val replDriver = new ReplDriver(settings=Array[String]("-classpath", "/home/cranium/.ivy2/local/ch.epfl.lamp/dotty-library_2.12/0.11.0-bin-SNAPSHOT-nonbootstrapped/jars/dotty-library_2.12.jar:/home/cranium/.coursier/cache/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.7/scala-library-2.12.7.jar"),
                                           out=resultStream.printStream(), classLoader=classLoader)
@@ -53,18 +54,44 @@ class DottyInterpreter(classLoader: Option[ClassLoader]) extends Interpreter {
       case None =>
         return ExecuteResult.Error("No output handler found")
       case Some(handler) =>
+        println("Hello world")
         resultStream.setOutputHandler(handler)
     }
 
     resultOutput.clear()
-    currState = replDriver.run(code)(currState)
-    count += 1
-    val out = resultOutput.result()
-    resultOutput.clear()
+    interruptible {
+      currState = replDriver.run(code)(currState)
+      count += 1
+      val out = resultOutput.result()
+      resultOutput.clear()
+      ExecuteResult.Success()
+    }
+  }
 
-    ExecuteResult.Success(
-      // DisplayData.text(out)
-    )
+  // Copied from Almond's ScalaInterpreter
+  private var interruptedStackTraceOpt = Option.empty[Array[StackTraceElement]]
+  private var currentThreadOpt = Option.empty[Thread]
+  override def interruptSupported: Boolean =
+    true
+  override def interrupt(): Unit =
+    currentThreadOpt.foreach(_.interrupt())
+
+  private def interruptible[T](t: => T): T = {
+    interruptedStackTraceOpt = None
+    currentThreadOpt = Some(Thread.currentThread())
+    try {
+      sun.misc.Signal.handle(new Signal("INT"),
+                             new SignalHandler() {
+                               def handle(sig: Signal) = {
+                                 interruptedStackTraceOpt = currentThreadOpt.map(_.getStackTrace)
+                                 currentThreadOpt.foreach(_.interrupt())
+                               }
+                             })
+
+      t
+    } finally {
+      currentThreadOpt = None
+    }
   }
 
   override def complete(code: String, pos: Int): Completion = {

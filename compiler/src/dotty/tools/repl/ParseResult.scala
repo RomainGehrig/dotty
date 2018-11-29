@@ -26,7 +26,7 @@ case class SyntaxErrors(sourceCode: String,
 case object Newline extends ParseResult
 
 /** `ctrl-c` obtained from input string */
-case object SigKill extends ParseResult
+case object SigInt extends ParseResult
 
 /** A command is on the format:
  *
