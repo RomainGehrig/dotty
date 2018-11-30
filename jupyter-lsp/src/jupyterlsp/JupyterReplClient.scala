@@ -36,6 +36,8 @@ object JupyterReplClient {
     client.server = server
 
     val params = new InitializeParams
+    // TODO What should the rootUri be ? (question for all ReplClients)
+    params.setRootUri(System.getProperty("user.dir"))
     server.initialize(params)
 
     client
