@@ -19,8 +19,24 @@ import jupyterlsp.ReplClient
  */
 object Main {
   def main(args: Array[String]): Unit = {
-    val serverIn = System.in
-    val serverOut = System.out
+
+    val serverSocket = new ServerSocket(0)
+    Runtime.getRuntime().addShutdownHook(new Thread(
+      new Runnable {
+        def run: Unit = {
+          serverSocket.close()
+        }
+      }));
+
+    println(s"Starting REPL server listening on port ${serverSocket.getLocalPort}")
+    val pw = new PrintWriter("../.dotty-repl-dev-port")
+    pw.write(serverSocket.getLocalPort.toString)
+    pw.close()
+
+    val clientSocket = serverSocket.accept()
+    println("Received connection")
+    val serverIn = clientSocket.getInputStream
+    val serverOut = clientSocket.getOutputStream
     System.setOut(System.err)
     scala.Console.withOut(scala.Console.err) {
       startServer(serverIn, serverOut)
@@ -30,7 +46,6 @@ object Main {
   def startServer(in: InputStream, out: OutputStream) = {
     val server = new ReplServer
 
-    println("Starting the REPL server")
     val launcher =
       new Launcher.Builder[ReplClient]()
         .setLocalService(server)
@@ -43,6 +58,7 @@ object Main {
 
     val client = launcher.getRemoteProxy()
     server.connect(client)
+    println("REPL server STARTED")
     launcher.startListening()
   }
 }
