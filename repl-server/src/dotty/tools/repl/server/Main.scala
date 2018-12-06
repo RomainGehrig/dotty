@@ -20,7 +20,7 @@ import jupyterlsp.ReplClient
 object Main {
   def main(args: Array[String]): Unit = {
 
-    val serverSocket = new ServerSocket(0)
+    val serverSocket = new ServerSocket(12555)
     Runtime.getRuntime().addShutdownHook(new Thread(
       new Runnable {
         def run: Unit = {
@@ -29,9 +29,9 @@ object Main {
       }));
 
     println(s"Starting REPL server listening on port ${serverSocket.getLocalPort}")
-    val pw = new PrintWriter("../.dotty-repl-dev-port")
-    pw.write(serverSocket.getLocalPort.toString)
-    pw.close()
+    // val pw = new PrintWriter("../.dotty-repl-dev-port")
+    // pw.write(serverSocket.getLocalPort.toString)
+    // pw.close()
 
     val clientSocket = serverSocket.accept()
     println("Received connection")

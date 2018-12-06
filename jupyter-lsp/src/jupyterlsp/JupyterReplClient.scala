@@ -17,6 +17,12 @@ import scala.util.control.NonFatal
 import scala.io.Codec
 import scala.util.Properties
 
+// Almond specifics
+import almond.protocol.KernelInfo
+import almond.interpreter.api.{DisplayData, OutputHandler}
+import almond.interpreter.input.InputManager
+import almond.interpreter.{ExecuteResult, Interpreter, Completion}
+
 trait Server extends LanguageServer with ReplService
 
 object JupyterReplClient {
@@ -44,12 +50,47 @@ object JupyterReplClient {
   }
 }
 
-class JupyterReplClient extends ReplClient { thisClient =>
+class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
 
   import lsp4j.jsonrpc.{CancelChecker, CompletableFutures}
   import lsp4j.jsonrpc.messages.{Either => JEither}
 
   private var server: Server = _
+
+  override def currentLine: Int = count
+  @volatile private var count = 0
+
+  override def kernelInfo(): KernelInfo = KernelInfo(
+    implementation="dotty",
+    implementation_version="0.1",
+    language_info=KernelInfo.LanguageInfo(
+      name="dotty",
+      version="2.14.0", // TODO ?
+      mimetype="text/scala",
+      file_extension=".scala",
+      nbconvert_exporter="", // TODO ?
+      pygments_lexer=None, // TODO ?
+      codemirror_mode=None, // TODO ?
+      ),
+    banner="Dotty kernel"
+      // helper_links=None,
+  )
+
+  override def execute(
+    code: String,
+    storeHistory: Boolean,
+    inputManager: Option[InputManager],
+    outputHandler: Option[OutputHandler]
+  ): ExecuteResult = {
+    val result = server.interpret(ReplInterpretParams(code))
+
+    try {
+      ExecuteResult.Success(DisplayData.text(result.get().output))
+    } catch {
+      case e: Throwable =>
+        ExecuteResult.Error(e.toString())
+    }
+  }
 
   override def logMessage(params: MessageParams): Unit = {}
   override def showMessage(params: MessageParams): Unit = {}

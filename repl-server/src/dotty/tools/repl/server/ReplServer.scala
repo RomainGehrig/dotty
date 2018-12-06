@@ -17,7 +17,8 @@ import scala.io.Codec
 
 import lsp4j.services._
 
-import jupyterlsp.{ReplClient, ReplService}
+import jupyterlsp._
+
 
 /** A Language Server that runs an instance of the Dotty REPL.
  */
@@ -109,6 +110,11 @@ class ReplServer extends LanguageServer
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {
     /*thisServer.synchronized*/ {}
+  }
+
+  // TODO interpret
+  override def interpret(params: ReplInterpretParams): CompletableFuture[ReplInterpretResult] = {
+    CompletableFuture.completedFuture(ReplInterpretResult("Repl successful"))
   }
 
   override def completion(params: CompletionParams) = computeAsync { cancelToken =>

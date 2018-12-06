@@ -9,4 +9,7 @@ import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
 @JsonSegment("repl")
 trait ReplService {
   // See WorksheetService for examples
+
+  @JsonRequest
+  def interpret(params: ReplInterpretParams): CompletableFuture[ReplInterpretResult]
 }
