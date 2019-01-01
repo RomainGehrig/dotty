@@ -6,6 +6,10 @@ case class ReplInterpretParams(code: String) {
   def this() = this("")
 }
 
-case class ReplInterpretResult(output: String) {
-  def this() = this("")
+case class GetReplResult(runId: Int) {
+  def this() = this(0)
+}
+
+case class ReplInterpretResult(runId: Int, output: String, hasMore: Boolean) {
+  def this() = this(0, "", false)
 }

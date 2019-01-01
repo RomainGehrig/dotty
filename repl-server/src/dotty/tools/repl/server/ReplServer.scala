@@ -5,12 +5,15 @@ package server
 import java.net.URI
 import java.io._
 import java.nio.file._
+import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
 import java.util.function.Function
 
 import org.eclipse.lsp4j
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 
 import scala.collection._
+import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 import scala.io.Codec
@@ -28,8 +31,18 @@ class ReplServer extends LanguageServer
   import lsp4j.jsonrpc.messages.{Either => JEither}
   import lsp4j._
 
+  // private val replStates: Map[VersionedTextDocumentIdentifier, ReplState] = MutableMap()
+
+  private val defaultLoader = Thread.currentThread().getContextClassLoader
+  private val resultOutput = new StringBuilder
+  private val resultStream = new FunctionOutputStream(2000, 2000, UTF_8, resultOutput.append(_))
+  private val replDriver = new ReplDriver(settings=Array[String]("-classpath", "/home/cranium/.ivy2/local/ch.epfl.lamp/dotty-library_2.12/0.11.0-bin-SNAPSHOT-nonbootstrapped/jars/dotty-library_2.12.jar:/home/cranium/.coursier/cache/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.7/scala-library-2.12.7.jar"),
+                                          out=resultStream.printStream(), classLoader=Some(defaultLoader))
+  private[this] var currentReplState = replDriver.initialState
 
   private[this] var rootUri: String = _
+  @volatile private[this] var currentRunId: Int = 0
+  private[this] val replRuns: MutableMap[Int, CompletableFuture[State]] = MutableMap()
 
   private[this] var myClient: ReplClient = _
   def client: ReplClient = myClient
@@ -113,12 +126,55 @@ class ReplServer extends LanguageServer
   }
 
   // TODO interpret
-  override def interpret(params: ReplInterpretParams): CompletableFuture[ReplInterpretResult] = {
-    CompletableFuture.completedFuture(ReplInterpretResult("Repl successful"))
+  override def interpret(params: ReplInterpretParams): CompletableFuture[ReplInterpretResult] = computeAsync { cancelToken =>
+    // TODO No concurrent runs !
+
+    // TODO Get state
+    // TODO Interprete
+    // TODO Add new state
+    // TODO Spawn new thread
+    val replRun: CompletableFuture[State] = CompletableFutures.computeAsync { replCancelToken =>
+      currentReplState = replDriver.run(params.code)(currentReplState)
+      currentReplState
+    }
+    currentRunId += 1
+    replRuns(currentRunId) = replRun
+
+    val out = resultOutput.result()
+    // TODO Concurrent
+    resultOutput.clear()
+    ReplInterpretResult(currentRunId, out, !replRun.isDone())
   }
+
+  override def interpretResults(params: GetReplResult): CompletableFuture[ReplInterpretResult] = computeAsync { cancelToken =>
+    cancelToken.checkCanceled()
+    val runId = params.runId
+
+    // TODO Get result from runId
+
+    var out = resultOutput.result()
+    while (out.isEmpty) {
+      Thread.sleep(100) // TODO change resultOutput
+      cancelToken.checkCanceled()
+      out = resultOutput.result()
+    }
+    resultOutput.clear()
+
+    ReplInterpretResult(runId, out, !replRuns(runId).isDone())
+  }
+
+  // override def interruptRun(params: ReplRunId): Unit = {
+  //   // TODO
+  // }
 
   override def completion(params: CompletionParams) = computeAsync { cancelToken =>
     val uri = new URI(params.getTextDocument.getUri)
+
+    // TODO
+    // val replState = getReplState(uri)
+    // val pos = params.position;
+
+    // replDriver.completions()
 
     JEither.forRight(new CompletionList(
       /*isIncomplete = */ false, Nil.asJava))

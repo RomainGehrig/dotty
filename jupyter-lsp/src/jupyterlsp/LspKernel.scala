@@ -39,14 +39,6 @@ object LspKernel {
     val kernelThreads = KernelThreads.create("dotty-kernel")
     val interpreterDotty = singleThreadedExecutionContext("dotty-interpreter")
 
-    // TODO Solve classloader problem
-    lazy val ctxURLs = java.lang.Thread.currentThread.getContextClassLoader match {
-      case cl: java.net.URLClassLoader => cl.getURLs.toList
-      case _ => List[Nothing]()
-    }
-    // val defaultLoader = new URLClassLoader((ctxURLs ++ libURLs.map(new URL(_))).toArray)
-    val defaultLoader = Thread.currentThread().getContextClassLoader
-
     Kernel.create(JupyterReplClient(Consts.lspServerPort), interpreterDotty, kernelThreads, logCtx)
       .flatMap(_.runOnConnectionFile(connectionFile, "dotty", zeromqThreads))
       .unsafeRunSync()

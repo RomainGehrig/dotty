@@ -56,6 +56,7 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
   import lsp4j.jsonrpc.messages.{Either => JEither}
 
   private var server: Server = _
+  @volatile private var interrupted = false
 
   override def currentLine: Int = count
   @volatile private var count = 0
@@ -82,14 +83,45 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
     inputManager: Option[InputManager],
     outputHandler: Option[OutputHandler]
   ): ExecuteResult = {
-    val result = server.interpret(ReplInterpretParams(code))
+    var futureResult = server.interpret(ReplInterpretParams(code))
 
     try {
-      ExecuteResult.Success(DisplayData.text(result.get().output))
+      val oh = outputHandler.get
+      if (interrupted) {
+        futureResult.cancel
+        interrupted = false
+        return ExecuteResult.Exit
+      }
+
+      var res = futureResult.get()
+      // TODO test should not be necessary
+      if (!res.output.isEmpty) {
+        oh.stdout(res.output)
+      }
+
+      while (res.hasMore) {
+        futureResult = server.interpretResults(GetReplResult(res.runId))
+        if (interrupted) {
+          futureResult.cancel
+          interrupted = false
+          return ExecuteResult.Exit
+        }
+        res = futureResult.get()
+
+        oh.stdout(res.output)
+      }
+
+      ExecuteResult.Success()
     } catch {
       case e: Throwable =>
         ExecuteResult.Error(e.toString())
     }
+  }
+
+
+  override def interruptSupported: Boolean = true
+  override def interrupt(): Unit = {
+    interrupted = true
   }
 
   override def logMessage(params: MessageParams): Unit = {}

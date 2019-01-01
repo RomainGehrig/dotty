@@ -12,4 +12,8 @@ trait ReplService {
 
   @JsonRequest
   def interpret(params: ReplInterpretParams): CompletableFuture[ReplInterpretResult]
+
+  @JsonRequest
+  def interpretResults(params: GetReplResult): CompletableFuture[ReplInterpretResult]
+
 }
