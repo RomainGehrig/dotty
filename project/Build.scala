@@ -951,9 +951,9 @@ object Build {
     settings(commonNonBootstrappedSettings).
     settings(
       libraryDependencies ++= Seq(
-        ("sh.almond" %% "kernel" % "0.1.8").withDottyCompat(scalaVersion.value),
+        ("sh.almond" %% "kernel" % "0.2.1").withDottyCompat(scalaVersion.value),
         // Not sure if all these dependencies are necessaries:
-        ("sh.almond" %% "echo" % "0.1.8").withDottyCompat(scalaVersion.value),
+        ("sh.almond" %% "echo" % "0.2.1").withDottyCompat(scalaVersion.value),
       )
     )
 
@@ -963,8 +963,8 @@ object Build {
     settings(
       libraryDependencies ++= Seq(
         "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.5.0.M1",
-        ("sh.almond" %% "kernel" % "0.1.8").withDottyCompat(scalaVersion.value),
-        ("sh.almond" %% "echo" % "0.1.8").withDottyCompat(scalaVersion.value)
+        ("sh.almond" %% "kernel" % "0.2.1").withDottyCompat(scalaVersion.value),
+        ("sh.almond" %% "echo" % "0.2.1").withDottyCompat(scalaVersion.value)
       )
     )
 
