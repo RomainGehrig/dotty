@@ -23,7 +23,7 @@ import almond.interpreter.api.{DisplayData, OutputHandler}
 import almond.interpreter.input.InputManager
 import almond.interpreter.{ExecuteResult, Interpreter, Completion}
 
-trait Server extends LanguageServer with ReplService
+trait Server extends LanguageServer with TextDocumentService with ReplService
 
 object JupyterReplClient {
   /** Create a new client connected to the REPL server at the given port number. */
@@ -116,6 +116,26 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
       case e: Throwable =>
         ExecuteResult.Error(e.toString())
     }
+  }
+
+  override def complete(code: String, pos: Int): Completion = {
+    val futureCompletions = server.replCompletion(ReplCompletionParams(code, pos))
+    // import org.eclipse.lsp4j.Position
+    // import org.eclipse.lsp4j.TextDocumentIdentifier
+
+    // val futureCompletions = server.completion(new CompletionParams(new TextDocumentIdentifier(), new Position()))
+
+    // TODO what if cancelled ?
+    val completionsEither: JEither[java.util.List[CompletionItem], CompletionList] = futureCompletions.get()
+    println(completionsEither)
+    val completions: List[CompletionItem] = (if (completionsEither.isLeft) completionsEither.getLeft
+                                             else completionsEither.getRight().getItems).asScala.toList
+
+    Completion(
+      pos, // TODO
+      pos, // TODO
+      completions.map(_.getLabel).distinct
+    )
   }
 
 

@@ -20,6 +20,12 @@ import scala.io.Codec
 
 import lsp4j.services._
 
+//
+import dotc._
+import ast.{Trees, tpd}
+import core._, core.Decorators.{sourcePos => _, _}
+import Contexts._, Flags._, Symbols._
+
 import jupyterlsp._
 
 
@@ -167,6 +173,33 @@ class ReplServer extends LanguageServer
   //   // TODO
   // }
 
+  // TODO Copied from DottyLanguageServer.scala
+  /** Create an lsp4j.CompletionItem from a Symbol */
+  def completionItem(sym: Symbol)(implicit ctx: Context): lsp4j.CompletionItem = {
+    def completionItemKind(sym: Symbol)(implicit ctx: Context): lsp4j.CompletionItemKind = {
+      import lsp4j.{CompletionItemKind => CIK}
+
+      if (sym.is(Package))
+        CIK.Module // No CompletionItemKind.Package (https://github.com/Microsoft/language-server-protocol/issues/155)
+      else if (sym.isConstructor)
+        CIK.Constructor
+      else if (sym.isClass)
+        CIK.Class
+      else if (sym.is(Mutable))
+        CIK.Variable
+      else if (sym.is(Method))
+        CIK.Method
+      else
+        CIK.Field
+    }
+
+    val label = sym.name.show
+    val item = new lsp4j.CompletionItem(label)
+    item.setDetail(sym.info.widenTermRefExpr.show)
+    item.setKind(completionItemKind(sym))
+    item
+  }
+
   override def completion(params: CompletionParams) = computeAsync { cancelToken =>
     val uri = new URI(params.getTextDocument.getUri)
 
@@ -180,6 +213,17 @@ class ReplServer extends LanguageServer
       /*isIncomplete = */ false, Nil.asJava))
   }
 
+  override def replCompletion(params: ReplCompletionParams) = computeAsync { cancelToken =>
+    val code = params.code
+    val pos = params.position
+
+    val completions = replDriver.makeCompletions((sym, ctx) => completionItem(sym)(ctx),
+                                                 pos, code, currentReplState)
+    JEither.forRight(new CompletionList(
+                       /* isIncomplete = */ false,
+                       completions.asJava
+                     ))
+  }
 
   override def hover(params: TextDocumentPositionParams) = computeAsync { cancelToken =>
     val uri = new URI(params.getTextDocument.getUri)

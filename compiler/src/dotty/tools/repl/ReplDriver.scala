@@ -147,6 +147,22 @@ class ReplDriver(settings: Array[String],
     state.copy(context = run.runContext)
   }
 
+  final def makeCompletions[A](f: (Symbol, Context) => A, cursor: Int, expr: String, state0: State): List[A] = {
+    implicit val state = newRun(state0)
+    compiler
+      .typeCheck(expr, errorsAllowed = true)
+      .map { tree =>
+        val file = new SourceFile("<completions>", expr)
+        val unit = new CompilationUnit(file)
+        unit.tpdTree = tree
+        implicit val ctx = state.context.fresh.setCompilationUnit(unit)
+        val srcPos = SourcePosition(file, Position(cursor))
+        val (_, completions) = Interactive.completions(srcPos)
+
+        completions.map(c => f(c, ctx))
+      }.getOrElse(Nil)
+  }
+
   /** Extract possible completions at the index of `cursor` in `expr` */
   protected[this] final def completions(cursor: Int, expr: String, state0: State): List[Candidate] = {
     def makeCandidate(completion: Symbol)(implicit ctx: Context) = {
@@ -161,19 +177,8 @@ class ReplDriver(settings: Array[String],
         /* complete = */ false  // if true adds space when completing
       )
     }
-    implicit val state = newRun(state0)
-    compiler
-      .typeCheck(expr, errorsAllowed = true)
-      .map { tree =>
-        val file = new SourceFile("<completions>", expr)
-        val unit = new CompilationUnit(file)
-        unit.tpdTree = tree
-        implicit val ctx = state.context.fresh.setCompilationUnit(unit)
-        val srcPos = SourcePosition(file, Position(cursor))
-        val (_, completions) = Interactive.completions(srcPos)
-        completions.map(makeCandidate)
-      }
-      .getOrElse(Nil)
+
+    makeCompletions((c, ctx) => makeCandidate(c)(ctx), cursor, expr, state0)
   }
 
   private def interpret(res: ParseResult)(implicit state: State): State = {

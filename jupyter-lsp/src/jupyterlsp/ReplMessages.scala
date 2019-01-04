@@ -13,3 +13,7 @@ case class GetReplResult(runId: Int) {
 case class ReplInterpretResult(runId: Int, output: String, hasMore: Boolean) {
   def this() = this(0, "", false)
 }
+
+case class ReplCompletionParams(code: String, position: Int) {
+  def this() = this("", 0)
+}
