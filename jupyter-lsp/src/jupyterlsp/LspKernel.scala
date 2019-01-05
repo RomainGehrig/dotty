@@ -21,7 +21,8 @@ object LspKernel {
         defaultId = "dotty",
         defaultDisplayName = "Dotty",
         language = "scala",
-        options = Options(force = true)
+        options = Options(force = true),
+        interruptMode = Some("message")
       ) match {
         case Left(e) =>
           Console.err.println(s"Error: $e")
