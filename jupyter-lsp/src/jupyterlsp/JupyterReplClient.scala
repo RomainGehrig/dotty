@@ -65,13 +65,13 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
     implementation="dotty",
     implementation_version="0.1",
     language_info=KernelInfo.LanguageInfo(
-      name="dotty",
+      name="scala",
       version="2.14.0", // TODO ?
-      mimetype="text/scala",
+      mimetype="text/x-scala",
       file_extension=".scala",
-      nbconvert_exporter="", // TODO ?
+      nbconvert_exporter="script", // TODO ?
       pygments_lexer=None, // TODO ?
-      codemirror_mode=None, // TODO ?
+      codemirror_mode=Some("text/x-scala"), // TODO ?
       ),
     banner="Dotty kernel"
       // helper_links=None,
