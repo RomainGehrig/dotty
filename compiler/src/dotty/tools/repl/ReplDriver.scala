@@ -123,6 +123,7 @@ class ReplDriver(settings: Array[String],
 
     @tailrec def loop(state: State): State = {
       val res = readLine(state)
+      out.println()
       if (res == Quit) state
       else loop(interpret(res)(state))
     }
@@ -199,7 +200,6 @@ class ReplDriver(settings: Array[String],
       case _ => // new line, empty tree
         state
     }
-    out.println()
     newState
   }
 
