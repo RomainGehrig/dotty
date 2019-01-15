@@ -191,7 +191,7 @@ class ReplServer extends LanguageServer
         null // No current run -> we don't reply to the request
       case Some(replRun) =>
         replRun.interrupt()
-        // "Bad" stacktrace because we don't have the shiny ASCII colors
+        // "Bad" stacktrace because we don't have the shiny ANSI colors
         val badStackTrace = replRun.getStackTrace.mkString("\n\tat ")
 
         ReplInterruptResult(runId, badStackTrace)

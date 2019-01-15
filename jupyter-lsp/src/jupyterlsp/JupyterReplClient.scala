@@ -84,17 +84,18 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
   ): ExecuteResult = {
     var futureResult = server.interpret(ReplInterpretParams(code))
 
+    val waitingInterrupt = new CompletableFuture[Boolean]()
+    currInterruption = Some(waitingInterrupt)
+    val runInterrupt = futureResult.thenCombine(waitingInterrupt, (replRes: ReplInterpretResult, _: Boolean) =>  replRes.runId)
+      .thenCompose{ runId: Int => {
+                     server.interruptRun(ReplRunIdentifier(runId))
+                   }
+      }
+
     // Update the line number no matter what happens
     count += 1
-    val interrupt = new CompletableFuture[Boolean]()
-    currInterruption = Some(interrupt)
 
     val oh = outputHandler.get
-    if (interrupt.isDone) {
-      futureResult.cancel(true)
-      return ExecuteResult.Error("Interrupted!")
-    }
-
     var res = futureResult.get()
     // TODO test should not be necessary
     if (!res.output.isEmpty) {
@@ -104,10 +105,10 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
     var hasMore = true
     while (hasMore) {
       futureResult = server.interpretResults(ReplRunIdentifier(res.runId))
-      CompletableFuture.anyOf(futureResult, interrupt).get match {
-        case _: Boolean =>
+      CompletableFuture.anyOf(futureResult, runInterrupt).get match {
+        case int: ReplInterruptResult =>
           futureResult.cancel(true)
-          return ExecuteResult.Error("Interrupted!")
+          return ExecuteResult.Error(int.stacktrace)
         case res: ReplInterpretResult =>
           hasMore = res.hasMore
           oh.stdout(res.output)
