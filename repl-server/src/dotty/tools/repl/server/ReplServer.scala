@@ -45,10 +45,10 @@ class ReplServer extends LanguageServer
 
   private[this] var rootUri: String = _
   @volatile private[this] var currentReplRunId_ : Int = 0
-  @volatile private[this] var currentReplRun_ = Option.empty[CompletableFuture[State]]
+  @volatile private[this] var currentReplRun_ = Option.empty[Thread]
   @volatile private[this] var currentReplState_ = replDriver.initialState
 
-  private[this] def getReplRun(runId: Int): Option[CompletableFuture[State]] =
+  private[this] def getReplRun(runId: Int): Option[Thread] =
     if (runId == currentReplRunId_)
       currentReplRun_
     else {
@@ -143,31 +143,17 @@ class ReplServer extends LanguageServer
     // TODO Interprete
     // TODO Add new state
     // TODO Spawn new thread
-    val replRun: CompletableFuture[State] = CompletableFutures.computeAsync { replCancelToken =>
-      println(s"Received code: ${params.code}")
-
-      val replThread = new Thread {
-        override def run(): Unit = {
-          currentReplState_ = replDriver.run(params.code)(currentReplState_)
-        }
+    val replRun: Thread = new Thread {
+      override def run(): Unit = {
+        currentReplState_ = replDriver.run(params.code)(currentReplState_)
       }
-
-      replThread.start
-      while (replThread.isAlive) {
-        Thread.sleep(50)
-
-        try replCancelToken.checkCanceled()
-        catch { case _: CancellationException => replThread.interrupt }
-      }
-
-      currentReplState_
     }
-
-
     currentReplRunId_ += 1
     currentReplRun_ = Some(replRun)
 
-    val hasMore = !replRun.isDone()
+    replRun.start
+
+    val hasMore = replRun.isAlive()
     val out = resultOutput.result()
     if (!hasMore)
       resultOutput.clear()
@@ -182,29 +168,35 @@ class ReplServer extends LanguageServer
         println(s"Found no run for id $runId")
         null // No current run -> we don't reply to the request
       case Some(replRun) =>
-        try cancelToken.checkCanceled()
-        catch { case _: CancellationException => replRun.cancel(true) }
+        cancelToken.checkCanceled()
 
         // TODO Get result from runId
         var out = resultOutput.result()
-        while (out.isEmpty && !replRun.isDone) {
-          try cancelToken.checkCanceled()
-          catch { case _: CancellationException => replRun.cancel(true) }
-
+        while (out.isEmpty && replRun.isAlive) {
+          cancelToken.checkCanceled()
           Thread.sleep(100) // TODO change resultOutput to wait for future
-
           out = resultOutput.result()
         }
         resultOutput.clear()
         println(s"Interpret result for $params is $out")
 
-        ReplInterpretResult(runId, out, !replRun.isDone())
+        ReplInterpretResult(runId, out, replRun.isAlive)
     }
   }
 
-  // override def interruptRun(params: ReplRunId): Unit = {
-  //   // TODO
-  // }
+  override def interruptRun(params: ReplRunIdentifier): CompletableFuture[ReplInterruptResult] = computeAsync { cancelToken =>
+    val runId = params.runId
+    getReplRun(runId) match {
+      case None =>
+        null // No current run -> we don't reply to the request
+      case Some(replRun) =>
+        replRun.interrupt()
+        // "Bad" stacktrace because we don't have the shiny ASCII colors
+        val badStackTrace = replRun.getStackTrace.mkString("\n\tat ")
+
+        ReplInterruptResult(runId, badStackTrace)
+    }
+  }
 
   // TODO Copied from DottyLanguageServer.scala
   /** Create an lsp4j.CompletionItem from a Symbol */
@@ -239,12 +231,6 @@ class ReplServer extends LanguageServer
 
   override def completion(params: CompletionParams) = computeAsync { cancelToken =>
     val uri = new URI(params.getTextDocument.getUri)
-
-    // TODO
-    // val replState = getReplState(uri)
-    // val pos = params.position;
-
-    // replDriver.completions()
 
     JEither.forRight(new CompletionList(
       /*isIncomplete = */ false, Nil.asJava))
