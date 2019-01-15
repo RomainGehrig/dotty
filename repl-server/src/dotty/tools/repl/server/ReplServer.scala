@@ -175,7 +175,7 @@ class ReplServer extends LanguageServer
     ReplInterpretResult(currentReplRunId_, out, hasMore)
   }
 
-  override def interpretResults(params: GetReplResult): CompletableFuture[ReplInterpretResult] = computeAsync { cancelToken =>
+  override def interpretResults(params: ReplRunIdentifier): CompletableFuture[ReplInterpretResult] = computeAsync { cancelToken =>
     val runId = params.runId
     getReplRun(runId) match {
       case None =>

@@ -103,7 +103,7 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
 
     var hasMore = true
     while (hasMore) {
-      futureResult = server.interpretResults(GetReplResult(res.runId))
+      futureResult = server.interpretResults(ReplRunIdentifier(res.runId))
       CompletableFuture.anyOf(futureResult, interrupt).get match {
         case _: Boolean =>
           futureResult.cancel(true)
