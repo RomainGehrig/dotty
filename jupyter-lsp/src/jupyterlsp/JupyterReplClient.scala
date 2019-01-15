@@ -119,10 +119,6 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
 
   override def complete(code: String, pos: Int): Completion = {
     val futureCompletions = server.replCompletion(ReplCompletionParams(code, pos))
-    // import org.eclipse.lsp4j.Position
-    // import org.eclipse.lsp4j.TextDocumentIdentifier
-
-    // val futureCompletions = server.completion(new CompletionParams(new TextDocumentIdentifier(), new Position()))
 
     // TODO what if cancelled ?
     val completionsEither: JEither[java.util.List[CompletionItem], CompletionList] = futureCompletions.get()
@@ -130,10 +126,15 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
     val completions: List[CompletionItem] = (if (completionsEither.isLeft) completionsEither.getLeft
                                              else completionsEither.getRight().getItems).asScala.toList
 
+    // We want the position of the first letter after a delimiter
+    // Really simple algo (should take all delimiters)
+    val lastWordStart = code.take(pos).reverse.dropWhile(_.isLetterOrDigit).length
+    val filteredCompletions = completions.map(_.getLabel).sorted.distinct
+
     Completion(
-      pos, // TODO
-      pos, // TODO
-      completions.map(_.getLabel).distinct
+      lastWordStart, // Should be OK
+      pos, // Until where we can replace letters
+      filteredCompletions
     )
   }
 
