@@ -56,7 +56,6 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
   import lsp4j.jsonrpc.messages.{Either => JEither}
 
   private var server: Server = _
-  @volatile private var interrupted = false
 
   override def currentLine: Int = count
   @volatile private var count = 0
@@ -85,37 +84,37 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
   ): ExecuteResult = {
     var futureResult = server.interpret(ReplInterpretParams(code))
 
-    try {
-      val oh = outputHandler.get
-      if (interrupted) {
-        futureResult.cancel
-        interrupted = false
-        return ExecuteResult.Exit
-      }
+    // Update the line number no matter what happens
+    count += 1
+    val interrupt = new CompletableFuture[Boolean]()
+    currInterruption = Some(interrupt)
 
-      var res = futureResult.get()
-      // TODO test should not be necessary
-      if (!res.output.isEmpty) {
-        oh.stdout(res.output)
-      }
-
-      while (res.hasMore) {
-        futureResult = server.interpretResults(GetReplResult(res.runId))
-        if (interrupted) {
-          futureResult.cancel
-          interrupted = false
-          return ExecuteResult.Exit
-        }
-        res = futureResult.get()
-
-        oh.stdout(res.output)
-      }
-
-      ExecuteResult.Success()
-    } catch {
-      case e: Throwable =>
-        ExecuteResult.Error(e.toString())
+    val oh = outputHandler.get
+    if (interrupt.isDone) {
+      futureResult.cancel(true)
+      return ExecuteResult.Error("Interrupted!")
     }
+
+    var res = futureResult.get()
+    // TODO test should not be necessary
+    if (!res.output.isEmpty) {
+      oh.stdout(res.output)
+    }
+
+    var hasMore = true
+    while (hasMore) {
+      futureResult = server.interpretResults(GetReplResult(res.runId))
+      CompletableFuture.anyOf(futureResult, interrupt).get match {
+        case _: Boolean =>
+          futureResult.cancel(true)
+          return ExecuteResult.Error("Interrupted!")
+        case res: ReplInterpretResult =>
+          hasMore = res.hasMore
+          oh.stdout(res.output)
+      }
+    }
+
+    ExecuteResult.Success()
   }
 
   override def complete(code: String, pos: Int): Completion = {
@@ -139,9 +138,11 @@ class JupyterReplClient extends ReplClient with Interpreter { thisClient =>
   }
 
 
+  @volatile private var currInterruption: Option[CompletableFuture[Boolean]] = None
   override def interruptSupported: Boolean = true
   override def interrupt(): Unit = {
-    interrupted = true
+    currInterruption.map(_.complete(true))
+    currInterruption = None
   }
 
   override def logMessage(params: MessageParams): Unit = {}
